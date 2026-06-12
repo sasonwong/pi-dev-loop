@@ -1,2 +1,5 @@
 node_modules/
-bun.lockb
+dist/
+*.js
+*.d.ts
+*.tsbuildinfo
