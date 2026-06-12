@@ -1,88 +1,48 @@
 import type { DevLoopState, ErrorRecord, ReviewFinding } from "./state";
 
-function statusBadge(status: string): string {
-  const map: Record<string, string> = {
-    new: "NEW",
-    fixed: "FIXED ✓",
-    regressed: "REGRESSED ⚠",
-    persistent: "PERSIST",
-  };
-  return map[status] ?? status.toUpperCase();
-}
-
-function formatSince(record: ErrorRecord): string {
-  if (record.fixedAt) return `iter ${record.fixedAt} (fixed)`;
-  if (record.status === "new") return `iter ${record.firstSeenAt}`;
-  if (record.status === "regressed") {
-    const last = record.regressedAt?.[record.regressedAt.length - 1] ?? record.lastSeenAt;
-    return `iter ${record.firstSeenAt}→${last}`;
-  }
-  return `iter ${record.firstSeenAt}→${record.lastSeenAt}`;
-}
-
 /**
  * Build the markdown iteration prompt injected into the main session
  * at the start of each loop iteration.
  */
 export function buildIterationPrompt(state: DevLoopState): string {
   const step = state.currentStep + 1;
-  const total = state.maxSteps === Infinity ? "∞" : String(state.maxSteps);
-  const modeLabel =
-    state.mode === "goal" ? "Goal Loop" :
-    state.mode === "passes" ? "Fixed Passes" : "Pipeline";
+  const total = state.maxSteps === Infinity ? "\u221e" : String(state.maxSteps);
 
   const lines: string[] = [];
-  lines.push(`## Dev Loop — ${modeLabel} — Iteration ${step}/${total}`);
+  lines.push(`## \ud83d\udd04 Dev Loop \u2014 Iteration ${step}/${total}`);
   lines.push("");
-  lines.push("### Goal");
-  lines.push(state.goal);
+  lines.push(`**Goal:** ${state.goal}`);
   lines.push("");
 
-  // Error registry table
+  // Error registry — compact list
   const active = state.errorRegistry.filter(e => e.status !== "fixed");
   if (active.length > 0) {
-    lines.push("### Error Registry");
-    lines.push("| Status | File | Error | Since |");
-    lines.push("|--------|------|-------|-------|");
     for (const err of active) {
+      const badge =
+        err.status === "regressed" ? "\u26a0\ufe0f" :
+        err.status === "new" ? "\ud83d\udd35" : "\ud83d\udd01";
       const loc = err.line ? `${err.file}:${err.line}` : err.file;
-      lines.push(`| ${statusBadge(err.status)} | \`${loc}\` | ${err.message} | ${formatSince(err)} |`);
+      lines.push(`${badge} \`${loc}\` \u2014 ${err.message}`);
     }
     lines.push("");
   } else {
-    lines.push("### Error Registry");
     lines.push("No outstanding errors.");
     lines.push("");
   }
 
   // Review findings
   const openFindings = state.reviewFindings.filter(f => f.status === "open");
-  if (openFindings.length > 0) {
-    lines.push("### Review Findings");
-    for (const f of openFindings) {
-      const icon =
-        f.severity === "critical" ? "🔴" :
-        f.severity === "important" ? "⚠️" : "📝";
-      lines.push(`- ${icon} \`${f.file}\` — ${f.message} (${f.severity})`);
-    }
-    lines.push("");
+  for (const f of openFindings) {
+    const icon = f.severity === "critical" ? "\ud83d\udd34" : f.severity === "important" ? "\u26a0\ufe0f" : "\ud83d\udcdd";
+    lines.push(`${icon} \`${f.file}\` \u2014 ${f.message}`);
   }
+  if (openFindings.length > 0) lines.push("");
 
-  // Priority guidance
-  lines.push("### Priority Order");
-  lines.push("1. **REGRESSED ⚠** — something came back, fix immediately");
-  lines.push("2. **NEW** — newly introduced, fix before adding more");
-  lines.push("3. **PERSIST** — old unresolved, may need different approach");
-  lines.push("4. **REVIEW** — code quality issues from review");
-  lines.push("");
-
-  // Instructions
-  lines.push("### This Iteration");
-  lines.push("1. Analyze the error registry above");
-  lines.push("2. Determine what to fix — pick the highest-priority error");
-  lines.push("3. Spawn an **impl subagent** with full context (error details + verify commands)");
-  lines.push("4. After impl returns, spawn a **review subagent** with ONLY the changed file list");
-  lines.push("5. Call `loop_control` with status \"next\" (needs more work) or \"done\" (goal met)");
+  // Direct action instruction
+  lines.push("**Your job:** Fix one error at a time.");
+  lines.push("1. Spawn an **impl subagent** with full error context + verify commands");
+  lines.push("2. After it returns, spawn a **review subagent** with ONLY the changed file list");
+  lines.push("3. Call `loop_control({ status: \"next\" | \"done\", ... })` with results");
 
   return lines.join("\n");
 }

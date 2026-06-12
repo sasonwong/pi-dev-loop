@@ -219,12 +219,10 @@ export default function (pi: ExtensionAPI) {
     if (state.active) {
       extra +=
         "\n\n## Active Dev Loop\n" +
-        `Mode: ${state.mode} | Iteration: ${state.currentStep + 1}` +
+        `Iteration ${state.currentStep + 1}` +
         (state.maxSteps === Infinity ? "" : `/${state.maxSteps}`) +
-        `\nGoal: ${state.goal}` +
-        "\nYou are the **orchestrator**. Do NOT write code directly." +
-        "\nAnalyze the error registry \u2192 deploy impl subagent(s) \u2192 deploy review subagent(s) \u2192 call loop_control." +
-        "\nCall `loop_control` with status \"next\" to continue or \"done\" when the goal is fully met.";
+        ` | Goal: ${state.goal}` +
+        "\n**Your job:** Fix the errors below. Spawn impl subagent → review subagent → call loop_control.";
     }
 
     return { systemPrompt: event.systemPrompt + extra };
@@ -264,9 +262,22 @@ export default function (pi: ExtensionAPI) {
         ? `Auto-detected ${detected.length} verify command(s): ${detected.map(s => s.command).join(", ")}.`
         : "No verify commands auto-detected. The loop will rely on LLM judgment.";
 
-      pi.sendUserMessage(
-        `## Dev Loop Started\n\nGoal: ${params.goal}\n\n${verifyHint}\n\n` + buildIterationPrompt(state),
-      );
+      setTimeout(() => {
+        pi.sendMessage(
+          {
+            customType: "dev-loop-iteration",
+            content: [
+              `## 🔄 Dev Loop Started`,
+              `**Goal:** ${params.goal}`,
+              `**Verify:** ${detected.length > 0 ? detected.map(s => `\`${s.command}\``).join(", ") : "none — will rely on LLM judgment"}`,
+              ``,
+              `Start by analyzing the errors below and spawning an impl subagent.`,
+            ].join("\n") + "\n\n" + buildIterationPrompt(state),
+            display: false,
+          },
+          { triggerTurn: true, deliverAs: "steer" },
+        );
+      }, 100);
 
       return {
         content: [{ type: "text", text: `✓ Dev loop started. Goal: ${params.goal}` }],
@@ -668,9 +679,16 @@ export default function (pi: ExtensionAPI) {
         const questions = mainSteps
           .map(s => `- ${(s as { question?: string }).question ?? "\u8bf7\u786e\u8ba4\u662f\u5426\u7ee7\u7eed"}`)
           .join("\n");
-        pi.sendUserMessage(
-          `## User Confirmation\n\nIteration ${state.currentStep} completed.\n\n${questions}\n\nEnter \`/loop resume\` to continue or \`/loop stop\` to end.`,
-        );
+        setTimeout(() => {
+          pi.sendMessage(
+            {
+              customType: "dev-loop-iteration",
+              content: `## User Confirmation\n\nIteration ${state.currentStep} completed.\n\n${questions}\n\nEnter \`/loop resume\` to continue or \`/loop stop\` to end.`,
+              display: false,
+            },
+            { triggerTurn: true, deliverAs: "steer" },
+          );
+        }, 100);
         return {
           content: [{ type: "text", text: "\u23f8 Paused for user confirmation. Use /loop resume to continue." }],
           details: { state: toSnapshot(state), awaitingUser: true },

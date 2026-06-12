@@ -45,7 +45,7 @@ describe("buildIterationPrompt", () => {
       message: "Type error here", firstSeenAt: 2, lastSeenAt: 2,
     }];
     const prompt = buildIterationPrompt(makeState({ errorRegistry: errors }));
-    expect(prompt).toContain("NEW");
+    expect(prompt).toContain("\uD83D\uDD35");
     expect(prompt).toContain("a.ts:10");
     expect(prompt).toContain("Type error here");
   });
@@ -65,14 +65,9 @@ describe("buildIterationPrompt", () => {
     expect(prompt).toContain("src/user.ts");
   });
 
-  it("includes priority order section", () => {
+  it("includes the action instruction section", () => {
     const prompt = buildIterationPrompt(makeState());
-    expect(prompt).toContain("REGRESSED");
-    expect(prompt).toContain("Priority");
-  });
-
-  it("includes this iteration instructions", () => {
-    const prompt = buildIterationPrompt(makeState());
+    expect(prompt).toContain("Your job");
     expect(prompt).toContain("impl subagent");
     expect(prompt).toContain("review subagent");
     expect(prompt).toContain("loop_control");
