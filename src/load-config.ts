@@ -12,7 +12,7 @@ interface RawConfig {
     command: string;
     runsOn?: string;
     timeout?: number;
-    parser?: string;
+    parser?: string | { pattern: string; category: string; fileGroup?: string; lineGroup?: string; messageGroup?: string };
     question?: string;
   }>;
   guardrails?: {

@@ -74,3 +74,53 @@ verify:
     expect(parseConfigContent(": invalid: yaml:")).toBeNull();
   });
 });
+
+describe("parseConfigContent with parser configs", () => {
+  it("parses builtin parser name", () => {
+    const yaml = `
+verify:
+  - command: "bun run typecheck"
+    runsOn: impl
+    parser: "tsc"
+`;
+    const config = parseConfigContent(yaml);
+    expect(config).not.toBeNull();
+    expect(config!.verifySteps[0].parser).toBe("tsc");
+  });
+
+  it("parses custom parser config object", () => {
+    const yaml = `
+verify:
+  - command: "./check.sh"
+    runsOn: impl
+    parser:
+      pattern: "ERROR in (?<file>[^:]+):(?<line>\\\\.)*"
+      category: "lint"
+`;
+    const config = parseConfigContent(yaml);
+    expect(config).not.toBeNull();
+    const parser = config!.verifySteps[0].parser as any;
+    expect(parser).toBeTruthy();
+    expect(parser.category).toBe("lint");
+  });
+
+  it("parses custom parser with optional group names", () => {
+    const yaml = `
+verify:
+  - command: "./my-linter"
+    runsOn: impl
+    parser:
+      pattern: "FAIL: (?<f>[^:]+):(?<ln>\\\\.)*"
+      category: "compile"
+      fileGroup: "f"
+      lineGroup: "ln"
+      messageGroup: "msg"
+`;
+    const config = parseConfigContent(yaml);
+    expect(config).not.toBeNull();
+    const parser = config!.verifySteps[0].parser as any;
+    expect(parser.fileGroup).toBe("f");
+    expect(parser.lineGroup).toBe("ln");
+    expect(parser.messageGroup).toBe("msg");
+  });
+});
