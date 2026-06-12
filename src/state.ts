@@ -25,6 +25,7 @@ export interface VerifyStep {
   runsOn: "impl" | "main";
   timeout?: number;
   parser?: string;
+  question?: string;
 }
 
 export interface GuardrailsConfig {
