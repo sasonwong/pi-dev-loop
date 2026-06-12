@@ -2,6 +2,8 @@
 
 Autonomous development loop engine for [pi](https://github.com/earendil-works/pi-coding-agent) — verify-driven iteration with subagent isolation and error tracking.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## Architecture
 
 Three-layer isolation:
@@ -105,3 +107,7 @@ bun run typecheck     # TypeScript check
 ```
 
 This project follows [design-confirm-implement → TDD → planned execution → review → verify](AGENTS.md). See `docs/specs/` for design docs and `docs/plans/` for implementation plans.
+
+## License
+
+[MIT](LICENSE) © 2026 Sason Wong
