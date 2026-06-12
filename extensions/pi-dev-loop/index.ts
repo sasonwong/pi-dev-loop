@@ -92,29 +92,9 @@ function updateWidget(state: DevLoopState, ctx: ExtensionContext) {
     ctx.ui.setWidget("dev-loop", undefined);
     return;
   }
-  const total = state.errorRegistry.length;
-  const fixed = state.errorRegistry.filter(e => e.status === "fixed").length;
-  const open = total - fixed;
-  const barLen = 10;
-  const filled = total > 0 ? Math.round((fixed / total) * barLen) : 0;
-  const bar = "\u25a0".repeat(filled) + "\u25a1".repeat(barLen - filled);
-  const regressed = state.errorRegistry.filter(e => e.status === "regressed").length;
-  const persistent = state.errorRegistry.filter(e => e.status === "persistent").length;
-  const newErrors = state.errorRegistry.filter(e => e.status === "new").length;
-
-  const label = `iter ${state.currentStep + 1}/${state.config.maxIterations}  [${bar}] ${open} open`;
-  let detail = "";
-  if (regressed > 0) detail += ` \u26a0 ${regressed} regressed`;
-  if (newErrors > 0) detail += `  \u25a0 ${newErrors} new`;
-  if (persistent > 0) detail += `  \u25a0 ${persistent} persist`;
-
-  ctx.ui.setStatus("dev-loop", `\ud83d\udd04 ${label}`);
-  ctx.ui.setWidget("dev-loop", [
-    `\u250c\u2500 Dev Loop \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`,
-    `\u2502 ${state.goal}`,
-    `\u2502 ${label}${detail}`,
-    `\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`,
-  ]);
+  const open = state.errorRegistry.filter(e => e.status !== "fixed").length;
+  ctx.ui.setStatus("dev-loop", `\ud83d\udd04 ${state.currentStep + 1}/${state.config.maxIterations}  \u26a1 ${open}`);
+  ctx.ui.setWidget("dev-loop", undefined);
 }
 
 function toSnapshot(state: DevLoopState): object {
