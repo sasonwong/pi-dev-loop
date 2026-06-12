@@ -44,7 +44,7 @@ export function parseConfigContent(yamlContent: string): DevLoopConfig | null {
       return "impl" as const;
     })(),
     timeout: v.timeout,
-    parser: v.parser,
+    parser: v.parser as VerifyStep["parser"],
     question: v.question,
   }));
 

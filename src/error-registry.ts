@@ -256,5 +256,13 @@ export function getParserForCommand(
 ): ParserConfig | null {
   const step = steps.find(s => s.command === command);
   if (!step || !step.parser) return null;
-  return step.parser;
+  // Narrow string to BuiltinParserName; if not a valid name, treat as null
+  const parser = step.parser;
+  if (typeof parser === "string") {
+    if (parser === "tsc" || parser === "eslint" || parser === "vitest") {
+      return parser;
+    }
+    return null;
+  }
+  return parser;
 }
