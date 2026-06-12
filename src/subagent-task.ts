@@ -51,6 +51,24 @@ export function packImplTask(
     lines.push("");
   }
 
+  // Parser extraction hint
+  const hasParser = implSteps.some(s => s.parser);
+  if (hasParser) {
+    lines.push("### Error Extraction from Verification Output");
+    lines.push("For each verify command, use the parser to extract errors:");
+    for (const step of implSteps) {
+      const cmd = expandCommand(step.command, changedFiles);
+      const parserInfo = step.parser
+        ? ` (parser: ${typeof step.parser === "string" ? step.parser : "custom"})`
+        : "";
+      lines.push(`- \`${cmd}\`${parserInfo}`);
+    }
+    lines.push("Parse the stdout/stderr with the specified parser.");
+    lines.push("Populate `errorsRemaining` with the extracted errors.");
+    lines.push("If verification passes (no errors), `errorsRemaining` is empty.");
+    lines.push("");
+  }
+
   // Structured output section
   lines.push("### Structured Output Format");
   lines.push("When your work is complete, your response must end with a JSON code block (no text after the closing ```):");

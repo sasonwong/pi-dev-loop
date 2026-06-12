@@ -139,6 +139,23 @@ describe("packImplTask structured output", () => {
     expect(task).toContain("```json");
   });
 
+  it("includes parser extraction instructions when config has parser", () => {
+    const config: DevLoopConfig = {
+      ...makeConfig(),
+      verifySteps: [
+        { command: "bun run typecheck", runsOn: "impl", parser: "tsc" },
+      ],
+    };
+    const error: ErrorRecord = {
+      id: "e1", category: "type", file: "src/main.ts",
+      line: 1, message: "err", status: "new" as const, firstSeenAt: 1, lastSeenAt: 1,
+    };
+    const task = packImplTask(error, config);
+    expect(task).toContain("Error Extraction");
+    expect(task).toContain("tsc");
+    expect(task).toContain("errorsRemaining");
+  });
+
   it("expands {files} placeholder in verify commands when changedFiles provided", () => {
     const config: DevLoopConfig = {
       ...makeConfig(),
