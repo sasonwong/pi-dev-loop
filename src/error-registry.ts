@@ -199,7 +199,12 @@ export function parseCustomOutput(
   output: string,
   config: CustomParserConfig,
 ): ErrorSignature[] {
-  const re = new RegExp(config.pattern, "gm");
+  let re: RegExp;
+  try {
+    re = new RegExp(config.pattern, "gm");
+  } catch (e) {
+    throw new Error(`Invalid parser regex pattern: ${config.pattern} — ${(e as Error).message}`);
+  }
   const results: ErrorSignature[] = [];
   const fileGroup = config.fileGroup ?? "file";
   const lineGroup = config.lineGroup ?? "line";

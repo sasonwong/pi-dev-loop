@@ -84,8 +84,6 @@ describe("mergeRegistry", () => {
 
 import { parseOutput, getParserForCommand } from "../src/error-registry";
 
-const mockParser = (name: string) => name as any;
-
 describe("parseOutput", () => {
   describe("tsc parser", () => {
     it("returns empty array for empty output", () => {
