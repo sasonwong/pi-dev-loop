@@ -24,7 +24,7 @@ export interface VerifyStep {
   command: string;
   runsOn: "impl" | "main";
   timeout?: number;
-  parser?: string;
+  parser?: string | ParserConfig;
   question?: string;
 }
 
@@ -59,6 +59,18 @@ export interface DevLoopState {
   done: boolean;
   reasonDone: string;
 }
+
+export type BuiltinParserName = "tsc" | "eslint" | "vitest";
+
+export interface CustomParserConfig {
+  pattern: string;
+  category: ErrorRecord["category"];
+  fileGroup?: string;
+  lineGroup?: string;
+  messageGroup?: string;
+}
+
+export type ParserConfig = BuiltinParserName | CustomParserConfig;
 
 export function createState(
   mode: DevLoopState["mode"],
