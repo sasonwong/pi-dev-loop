@@ -1,7 +1,8 @@
 // extensions/pi-dev-loop/index.ts — pi-dev-loop extension entry point
 //
-// Commands:   /dev goal|stop|status|pause|resume|history
-// Tools:      dev_control (called by LLM to signal iteration completion)
+// Commands:   /loop goal|stop|status|pause|resume|history
+// Tools:      loop_control (called by LLM to signal iteration completion)
+//             loop_start  (called by LLM to start a new loop from conversation)
 // Events:     input (prefix transform), before_agent_start (skill injection),
 //             session_start / session_tree (state reconstruction)
 // Resources:  skill + prompt registration
@@ -23,6 +24,7 @@ import {
 import { mergeRegistry, fingerprint, type ErrorSignature } from "../../src/error-registry.ts";
 import { buildConfig, parseInlineVerifies, mergeConfigs } from "../../src/verify-config.ts";
 import { loadConfigFromFile } from "../../src/load-config.ts";
+import { detectVerifySteps } from "../../src/auto-detect.ts";
 import { takeSnapshot, hasUncommittedChanges, rollbackToSnapshot } from "../../src/git.ts";
 import { buildIterationPrompt } from "../../src/session-prompt.ts";
 
@@ -69,7 +71,7 @@ function buildDevCommandPrompt(goal: string, config: DevLoopConfig): string {
   lines.push("");
   const implVerifies = config.verifySteps.filter(v => v.runsOn === "impl");
   if (implVerifies.length > 0) {
-    lines.push("### Verification Commands (MUST pass before dev_control)");
+    lines.push("### Verification Commands (MUST pass before loop_control)");
     for (const v of implVerifies) lines.push(`- \`${v.command}\``);
     lines.push("");
   }
@@ -79,8 +81,8 @@ function buildDevCommandPrompt(goal: string, config: DevLoopConfig): string {
   lines.push('   `subagent({ agent: "worker", task: packImplTask(...) })`');
   lines.push("3. After impl returns, spawn a **review subagent**:");
   lines.push('   `subagent({ agent: "reviewer", task: packReviewTask(changedFiles) })`');
-  lines.push("4. Call `dev_control({ status: \"next\", ... })` to continue");
-  lines.push('   or `dev_control({ status: "done", ... })` if the goal is fully met');
+  lines.push("4. Call `loop_control({ status: \"next\", ... })` to continue");
+  lines.push('   or `loop_control({ status: "done", ... })` if the goal is fully met');
   return lines.join("\n");
 }
 
@@ -139,7 +141,7 @@ function buildHistoryReport(ctx: ExtensionContext): string {
   for (const entry of ctx.sessionManager.getBranch()) {
     if (entry.type !== "message") continue;
     const msg = entry.message;
-    if (msg.role === "toolResult" && msg.toolName === "dev_control") {
+    if (msg.role === "toolResult" && msg.toolName === "loop_control") {
       const details = msg.details as {
         state?: DevLoopState; progress?: string;
       } | undefined;
@@ -147,7 +149,6 @@ function buildHistoryReport(ctx: ExtensionContext): string {
         const s = details.state;
         const status = s.done ? "\u2713" : s.pauseReason ? "\u23f8" : "\u2192";
         const progressTag = details.progress ? ` [${details.progress}]` : "";
-        // Use the summary from the dev_control call params if available
         const summary =
           (msg.params as { summary?: string })?.summary ??
           s.reasonDone ??
@@ -173,7 +174,7 @@ export default function (pi: ExtensionAPI) {
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type !== "message") continue;
       const msg = entry.message;
-      if (msg.role === "toolResult" && msg.toolName === "dev_control") {
+      if (msg.role === "toolResult" && msg.toolName === "loop_control") {
         const details = msg.details as { state?: Record<string, unknown> } | undefined;
         if (details?.state) {
           state = { ...emptyState(), ...details.state } as DevLoopState;
@@ -188,50 +189,113 @@ export default function (pi: ExtensionAPI) {
   // ── Resource discovery (skill + prompt paths) ──
   pi.on("resources_discover", () => ({
     skillPaths: [join(PACKAGE_ROOT, "skills/pi-dev-loop/SKILL.md")],
-    promptPaths: [join(PACKAGE_ROOT, "prompts/dev-goal.md")],
+    promptPaths: [join(PACKAGE_ROOT, "prompts/loop-goal.md")],
   }));
 
-  // ── Input prefix transform (devloop: / #devloop) ──
+  // ── Input prefix transform (loop: / #loop) ──
   pi.on("input", async (event, ctx) => {
     const trimmed = event.text.trim();
-    const match = trimmed.match(/^(?:devloop:|#devloop)\s*(.*)$/is);
+    const match = trimmed.match(/^(?:loop:|#loop)\s*(.*)$/is);
     if (!match) return { action: "continue" };
     const objective = match[1]?.trim();
     if (!objective) {
-      ctx.ui.notify("Usage: devloop: <objective>", "warning");
+      ctx.ui.notify("Usage: loop: <objective>", "warning");
       return { action: "handled" };
     }
     return {
       action: "transform",
-      text: `You are starting a dev loop. Goal: ${objective}\n\nStart by analyzing the project, then begin your first iteration. Use dev_control("next") to continue, dev_control("done") when complete.`,
+      text: `You are starting a dev loop. Goal: ${objective}\n\nStart by analyzing the project, then begin your first iteration. Use loop_control("next") to continue, loop_control("done") when complete.`,
     };
   });
 
   // ── System prompt injection (skill + loop context) ──
   pi.on("before_agent_start", async (event) => {
-    if (!state.active) return;
-    return {
-      systemPrompt:
-        event.systemPrompt +
+    let extra =
+      "\n\n## Dev Loop Available\n" +
+      "This project has pi-dev-loop installed. Use `loop_start` tool to start an " +
+      "autonomous fix loop when the user wants to fix bugs, type errors, or make improvements. " +
+      "Use /loop status|pause|resume|stop to control an active loop.";
+
+    if (state.active) {
+      extra +=
         "\n\n## Active Dev Loop\n" +
         `Mode: ${state.mode} | Iteration: ${state.currentStep + 1}` +
         (state.maxSteps === Infinity ? "" : `/${state.maxSteps}`) +
         `\nGoal: ${state.goal}` +
         "\nYou are the **orchestrator**. Do NOT write code directly." +
-        "\nAnalyze the error registry \u2192 deploy impl subagent(s) \u2192 deploy review subagent(s) \u2192 call dev_control." +
-        "\nCall `dev_control` with status \"next\" to continue or \"done\" when the goal is fully met.",
-    };
+        "\nAnalyze the error registry \u2192 deploy impl subagent(s) \u2192 deploy review subagent(s) \u2192 call loop_control." +
+        "\nCall `loop_control` with status \"next\" to continue or \"done\" when the goal is fully met.";
+    }
+
+    return { systemPrompt: event.systemPrompt + extra };
   });
 
-  // ── /dev command ──
-  pi.registerCommand("dev", {
+  // ── loop_start tool (for LLM to start from conversation) ──
+  pi.registerTool({
+    name: "loop_start",
+    label: "Start Dev Loop",
     description:
-      "Start/control a dev loop. Usage: /dev goal <desc> [options] | /dev stop | /dev status | /dev history",
+      "Start an autonomous dev loop to fix errors or implement changes. " +
+      "Call this when the user wants to fix bugs, type errors, failing tests, or make improvements. " +
+      "Auto-detects project verify commands (typecheck, test, lint) and starts Iteration 1.",
+    parameters: Type.Object({
+      goal: Type.String({ description: "What to fix or achieve" }),
+    }),
+    async execute(
+      _id: string,
+      params: { goal: string },
+      _signal: AbortSignal | undefined,
+      _onUpdate: unknown,
+      ctx: ExtensionContext,
+    ) {
+      if (state.active) {
+        return {
+          content: [{ type: "text", text: "A dev loop is already active. Use /loop status to check, or /loop stop to end it first." }],
+          details: { state: toSnapshot(state) },
+        };
+      }
+
+      const detected = detectVerifySteps();
+      const config = buildConfig({ verifySteps: detected, maxIterations: 20 });
+      state = createState("goal", params.goal, config);
+      updateWidget(state, ctx);
+
+      const verifyHint = detected.length > 0
+        ? `Auto-detected ${detected.length} verify command(s): ${detected.map(s => s.command).join(", ")}.`
+        : "No verify commands auto-detected. The loop will rely on LLM judgment.";
+
+      pi.sendUserMessage(
+        `## Dev Loop Started\n\nGoal: ${params.goal}\n\n${verifyHint}\n\n` + buildIterationPrompt(state),
+      );
+
+      return {
+        content: [{ type: "text", text: `✓ Dev loop started. Goal: ${params.goal}` }],
+        details: { state: toSnapshot(state) },
+      };
+    },
+    renderCall(args: { goal: string }, theme: { fg: (color: string, text: string) => string }) {
+      return new Text(theme.fg("toolTitle", "loop_start ") + theme.fg("accent", args.goal), 0, 0);
+    },
+    renderResult(
+      result: { details?: { state?: DevLoopState } },
+      _opts: unknown,
+      theme: { fg: (color: string, text: string) => string },
+    ) {
+      const d = result.details;
+      if (!d?.state) return new Text("", 0, 0);
+      return new Text(theme.fg("success", "✓ loop started"), 0, 0);
+    },
+  });
+
+  // ── /loop command ──
+  pi.registerCommand("loop", {
+    description:
+      "Start/control a dev loop. Usage: /loop goal <desc> [options] | /loop stop | /loop status | /loop history",
     handler: async (args, ctx) => {
       if (!args?.trim()) {
         ctx.ui.notify(
-          "Usage:\n  /dev goal <desc> [--verify cmd] [--from-config [path]]\n" +
-            "  /dev stop\n  /dev status\n  /dev pause\n  /dev resume\n  /dev history",
+          "Usage:\n  /loop goal <desc> [--verify cmd] [--from-config [path]]\n" +
+            "  /loop stop\n  /loop status\n  /loop pause\n  /loop resume\n  /loop history",
           "info",
         );
         return;
@@ -267,7 +331,7 @@ export default function (pi: ExtensionAPI) {
         if (!state.active) { ctx.ui.notify("No active loop", "info"); return; }
         state.active = false;
         ctx.ui.setStatus("dev-loop", "paused");
-        ctx.ui.notify("Dev loop paused. Use /dev resume to continue.", "info");
+        ctx.ui.notify("Dev loop paused. Use /loop resume to continue.", "info");
         return;
       }
 
@@ -287,7 +351,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // ── /dev goal ... ──
+      // ── /loop goal ... ──
       if (subcmd !== "goal") {
         ctx.ui.notify(
           `Unknown subcommand "${subcmd}". Use: goal, stop, status, pause, resume, history`,
@@ -298,7 +362,7 @@ export default function (pi: ExtensionAPI) {
 
       await ctx.waitForIdle();
 
-      // Parse: /dev goal <desc> [--verify cmd] [--max-iterations N] [--from-config [path]]
+      // Parse: /loop goal <desc> [--verify cmd] [--max-iterations N] [--from-config [path]]
       const rest = parts.slice(1);
       const verifyFlags: string[] = [];
       let maxIterations = 20;
@@ -340,24 +404,29 @@ export default function (pi: ExtensionAPI) {
         const cliOverrides: Partial<DevLoopConfig> = { maxIterations };
         if (cliVerify.length > 0) cliOverrides.verifySteps = cliVerify;
         config = mergeConfigs(yamlConfig, cliOverrides);
-      } else {
+      } else if (verifyFlags.length > 0) {
         const verifySteps = parseInlineVerifies(verifyFlags);
         config = buildConfig({ maxIterations, verifySteps });
+      } else {
+        // No --verify, no --from-config → auto-detect
+        const detected = detectVerifySteps();
+        config = buildConfig({ maxIterations, verifySteps: detected });
       }
 
       state = createState("goal", goal, config);
-      if (config.verifySteps.length === 0) {
-        ctx.ui.notify("Warning: no verify commands configured. Loop will rely on LLM judgment to determine completion.", "warning");
-      }
       updateWidget(state, ctx);
-      pi.sendUserMessage(buildDevCommandPrompt(goal, config));
+      if (config.verifySteps.length > 0) {
+        pi.sendUserMessage(buildIterationPrompt(state));
+      } else {
+        pi.sendUserMessage(buildDevCommandPrompt(goal, config));
+      }
     },
   });
 
-  // ── dev_control tool ──
+  // ── loop_control tool ──
   pi.registerTool({
-    name: "dev_control",
-    label: "Dev Loop Control",
+    name: "loop_control",
+    label: "Loop Control",
     description: [
       "Signal dev loop progress. Call this after impl subagent(s) and review subagent(s) complete.",
       "status 'next': advance to the next iteration.",
@@ -417,7 +486,7 @@ export default function (pi: ExtensionAPI) {
     ) {
       if (!state.active) {
         return {
-          content: [{ type: "text", text: "No active dev loop. Start one with /dev goal." }],
+          content: [{ type: "text", text: "No active dev loop. Call `loop_start` to start one." }],
           details: { state: null },
         };
       }
@@ -440,7 +509,7 @@ export default function (pi: ExtensionAPI) {
 
       // ── status === "next" — Decision Engine ──
 
-      // Step 1: Verification check — all subagents MUST pass
+      // Step 1: Verification check
       if (!params.implSubagents || params.implSubagents.length === 0) {
         return {
           content: [{
@@ -458,13 +527,13 @@ export default function (pi: ExtensionAPI) {
             type: "text",
             text: "\u2717 Verification failed for one or more impl subagents. " +
               "All subagents must pass verification before advancing. " +
-              "Fix the issues and call dev_control again.",
+              "Fix the issues and call loop_control again.",
           }],
           details: { state: toSnapshot(state), blockReason: "verification_failed" },
         };
       }
 
-      // Step 2: Collect review findings + auto-convert critical to error registry
+      // Step 2: Collect review findings
       const incomingErrors: ErrorSignature[] = [];
       for (const f of params.reviewFindings ?? []) {
         state.reviewFindings.push({
@@ -499,13 +568,10 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      // Step 4: Preserve old state for progress detection
+      // Step 4-6: Merge + detect
       const oldErrorRegistry = [...state.errorRegistry];
-
-      // Step 5: Merge registry
       state.errorRegistry = mergeRegistry(state.errorRegistry, incomingErrors, state.currentStep);
 
-      // Step 6: Detect progress
       const progress = detectProgress(
         oldErrorRegistry,
         state.errorRegistry,
@@ -513,31 +579,24 @@ export default function (pi: ExtensionAPI) {
         state.config,
       );
 
-      // Step 7: Decision branch
+      // Step 7: Decision
       state.currentStep++;
 
       if (progress === "regression") {
         state.pauseReason = "regression";
         state.active = false;
-
         if (state.config.guardrails.rollbackOnRegression && state.lastCleanSnapshot) {
-          try {
-            rollbackToSnapshot(state.lastCleanSnapshot);
-          } catch {
-            // Soft fail
-          }
+          try { rollbackToSnapshot(state.lastCleanSnapshot); } catch { /* soft fail */ }
         }
-
         updateWidget(state, ctx);
         return {
           content: [{
             type: "text",
-            text: `\u26a0 Regression detected at iteration ${state.currentStep}. ` +
-              "Previously fixed errors have reappeared. The loop is paused." +
+            text: `\u26a0 Regression detected at iteration ${state.currentStep}.` +
               (state.lastCleanSnapshot
-                ? ` Auto-rolled back to clean snapshot ${state.lastCleanSnapshot.slice(0, 7)}. `
+                ? ` Auto-rolled back to ${state.lastCleanSnapshot.slice(0, 7)}. `
                 : " ") +
-              "Use /dev resume to retry with a different approach, or /dev stop to end.",
+              "Use /loop resume to retry, or /loop stop to end.",
           }],
           details: { state: toSnapshot(state), progress, regression: true },
         };
@@ -552,39 +611,31 @@ export default function (pi: ExtensionAPI) {
           return {
             content: [{
               type: "text",
-              text: `\u26a0 Zero progress for ${state.consecutiveZeroProgress} consecutive iterations. ` +
-                "The error set is not changing. Loop paused. " +
-                "Consider a fundamentally different approach, then use /dev resume.",
+              text: `\u26a0 Zero progress for ${state.consecutiveZeroProgress} consecutive iterations. Loop paused. Use /loop resume with a different approach.`,
             }],
             details: { state: toSnapshot(state), progress },
           };
         }
       } else {
         state.consecutiveZeroProgress = 0;
-        if (state.latestSnapshot) {
-          state.lastCleanSnapshot = state.latestSnapshot;
-        }
+        if (state.latestSnapshot) state.lastCleanSnapshot = state.latestSnapshot;
       }
 
       // Step 8: Check completion
       const openErrors = state.errorRegistry.filter(e => e.status !== "fixed").length;
       const openFindings = state.reviewFindings.filter(f => f.status === "open").length;
-
       if (openErrors === 0 && openFindings === 0) {
         state.active = false;
         state.done = true;
         state.reasonDone = "All errors resolved, all review findings addressed";
         updateWidget(state, ctx);
         return {
-          content: [{
-            type: "text",
-            text: `\u2713 All errors resolved after ${state.currentStep} iteration(s). Goal achieved.`,
-          }],
+          content: [{ type: "text", text: `\u2713 All errors resolved after ${state.currentStep} iteration(s). Goal achieved.` }],
           details: { state: toSnapshot(state) },
         };
       }
 
-      // Step 9: Check max iterations
+      // Step 9: Max iterations
       if (state.currentStep >= state.config.maxIterations) {
         state.active = false;
         state.pauseReason = "max-iterations";
@@ -592,29 +643,24 @@ export default function (pi: ExtensionAPI) {
         return {
           content: [{
             type: "text",
-            text: `\u26a0 Max iterations (${state.config.maxIterations}) reached. ` +
-              "Loop paused. Use /dev resume to continue or /dev stop to end.",
+            text: `\u26a0 Max iterations (${state.config.maxIterations}) reached. Loop paused. Use /loop resume to continue or /loop stop to end.`,
           }],
           details: { state: toSnapshot(state) },
         };
       }
 
-      // Step 10: Git auto-snapshot before next iteration
+      // Step 10: Git auto-snapshot
       if (state.config.guardrails.gitAutoSnapshot) {
         try {
           if (hasUncommittedChanges()) {
             const snap = takeSnapshot(`pre-iter-${state.currentStep + 1}`);
             state.latestSnapshot = snap.hash;
-            if (!state.lastCleanSnapshot) {
-              state.lastCleanSnapshot = snap.hash;
-            }
+            if (!state.lastCleanSnapshot) state.lastCleanSnapshot = snap.hash;
           }
-        } catch {
-          // Soft fail — snapshot is best-effort
-        }
+        } catch { /* soft fail */ }
       }
 
-      // Step 11: Check for ask_user verifier (pause for user confirmation)
+      // Step 11: ask_user verifier
       const mainSteps = state.config.verifySteps.filter(v => v.runsOn === "main");
       if (mainSteps.length > 0) {
         state.active = false;
@@ -623,13 +669,10 @@ export default function (pi: ExtensionAPI) {
           .map(s => `- ${(s as { question?: string }).question ?? "\u8bf7\u786e\u8ba4\u662f\u5426\u7ee7\u7eed"}`)
           .join("\n");
         pi.sendUserMessage(
-          `## User Confirmation\n\nIteration ${state.currentStep} completed.\n\n${questions}\n\nEnter \`/dev resume\` to continue or \`/dev stop\` to end.`,
+          `## User Confirmation\n\nIteration ${state.currentStep} completed.\n\n${questions}\n\nEnter \`/loop resume\` to continue or \`/loop stop\` to end.`,
         );
         return {
-          content: [{
-            type: "text",
-            text: "\u23f8 Paused for user confirmation. Use /dev resume to continue.",
-          }],
+          content: [{ type: "text", text: "\u23f8 Paused for user confirmation. Use /loop resume to continue." }],
           details: { state: toSnapshot(state), awaitingUser: true },
         };
       }
@@ -638,32 +681,21 @@ export default function (pi: ExtensionAPI) {
       updateWidget(state, ctx);
       setTimeout(() => {
         pi.sendMessage(
-          {
-            customType: "dev-loop-iteration",
-            content: buildIterationPrompt(state),
-            display: false,
-          },
+          { customType: "dev-loop-iteration", content: buildIterationPrompt(state), display: false },
           { triggerTurn: true, deliverAs: "steer" },
         );
       }, 100);
 
       return {
-        content: [{
-          type: "text",
-          text: `\u2192 Advancing to iteration ${state.currentStep + 1}. Progress: ${progress}.`,
-        }],
+        content: [{ type: "text", text: `\u2192 Advancing to iteration ${state.currentStep + 1}. Progress: ${progress}.` }],
         details: { state: toSnapshot(state), progress },
       };
     },
-    renderCall(
-      args: { status: string },
-      theme: { fg: (color: string, text: string) => string },
-    ) {
+    renderCall(args: { status: string }, theme: { fg: (color: string, text: string) => string }) {
       return new Text(
-        theme.fg("toolTitle", "dev_control ") +
+        theme.fg("toolTitle", "loop_control ") +
           theme.fg(args.status === "done" ? "success" : "accent", args.status),
-        0,
-        0,
+        0, 0,
       );
     },
     renderResult(
@@ -677,11 +709,7 @@ export default function (pi: ExtensionAPI) {
       const progressTag = d.progress ? ` [${d.progress}]` : "";
       const color = s.done ? "success" : s.pauseReason ? "warning" : "accent";
       const icon = s.done ? "\u2713" : s.pauseReason ? "\u23f8" : "\u2192";
-      return new Text(
-        theme.fg(color, `${icon} iter ${s.currentStep + 1} \u2014 ${s.mode}${progressTag}`),
-        0,
-        0,
-      );
+      return new Text(theme.fg(color, `${icon} iter ${s.currentStep + 1} \u2014 ${s.mode}${progressTag}`), 0, 0);
     },
   });
 }

@@ -82,7 +82,7 @@ export function buildIterationPrompt(state: DevLoopState): string {
   lines.push("2. Determine what to fix — pick the highest-priority error");
   lines.push("3. Spawn an **impl subagent** with full context (error details + verify commands)");
   lines.push("4. After impl returns, spawn a **review subagent** with ONLY the changed file list");
-  lines.push('5. Call `dev_control` with status "next" (needs more work) or "done" (goal met)');
+  lines.push("5. Call `loop_control` with status \"next\" (needs more work) or \"done\" (goal met)");
 
   return lines.join("\n");
 }
