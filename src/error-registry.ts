@@ -14,15 +14,16 @@ export interface ErrorSignature {
  * Generate a stable error fingerprint by normalizing variable parts of the
  * message (line numbers, column references, expected/got counts) and hashing.
  */
-export function fingerprint(file: string, line: number, message: string): string {
+export function fingerprint(file: string, line: number | undefined, message: string): string {
   const normal = message
     .replace(/line \d+/gi, "line N")
     .replace(/:\d+:/g, ":N:")
     .replace(/expected \d+/gi, "expected N")
     .replace(/got \d+/gi, "got N")
     .trim();
+  const linePart = line !== undefined ? `:${line}` : ":0";
   return createHash("sha256")
-    .update(`${file}:${line}:${normal}`)
+    .update(`${file}${linePart}:${normal}`)
     .digest("hex")
     .slice(0, 16);
 }
