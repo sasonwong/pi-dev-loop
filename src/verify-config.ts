@@ -29,3 +29,19 @@ export function buildConfig(
     },
   };
 }
+
+/**
+ * Merge a base (YAML-derived) config with CLI overrides.
+ * Any field present in `cliOverrides` replaces the base value.
+ */
+export function mergeConfigs(
+  base: DevLoopConfig,
+  cliOverrides: Partial<DevLoopConfig>,
+): DevLoopConfig {
+  return {
+    maxIterations: cliOverrides.maxIterations ?? base.maxIterations,
+    maxConsecutiveZeroProgress: cliOverrides.maxConsecutiveZeroProgress ?? base.maxConsecutiveZeroProgress,
+    verifySteps: cliOverrides.verifySteps ?? base.verifySteps,
+    guardrails: cliOverrides.guardrails ?? base.guardrails,
+  };
+}
