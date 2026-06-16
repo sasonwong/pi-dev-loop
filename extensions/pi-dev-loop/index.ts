@@ -22,8 +22,7 @@ import {
   type ErrorRecord,
 } from "../../src/state.ts";
 import { mergeRegistry, fingerprint, type ErrorSignature } from "../../src/error-registry.ts";
-import { buildConfig, parseInlineVerifies, mergeConfigs } from "../../src/verify-config.ts";
-import { loadConfigFromFile } from "../../src/load-config.ts";
+import { buildConfig, parseInlineVerifies } from "../../src/verify-config.ts";
 import { detectVerifySteps } from "../../src/auto-detect.ts";
 import { takeSnapshot, hasUncommittedChanges, rollbackToSnapshot } from "../../src/git.ts";
 import { buildIterationPrompt } from "../../src/session-prompt.ts";
@@ -77,11 +76,8 @@ function buildDevCommandPrompt(goal: string, config: DevLoopConfig): string {
   }
   lines.push("### How to start");
   lines.push("1. Analyze the codebase to understand what needs to change");
-  lines.push("2. Spawn an **impl subagent** with full context:");
-  lines.push('   `subagent({ agent: "worker", task: packImplTask(...) })`');
-  lines.push("3. After impl returns, spawn a **review subagent**:");
-  lines.push('   `subagent({ agent: "reviewer", task: packReviewTask(changedFiles) })`');
-  lines.push("4. Call `loop_control({ status: \"next\", ... })` to continue");
+  lines.push("2. Fix errors (use `subagent()` to delegate if available, or work directly)");
+  lines.push("3. Call `loop_control({ status: \"next\", ... })` to continue");
   lines.push('   or `loop_control({ status: "done", ... })` if the goal is fully met');
   return lines.join("\n");
 }
@@ -200,8 +196,8 @@ export default function (pi: ExtensionAPI) {
       "- A bug that might need trial and error (the loop auto-tracks what works)\n" +
       "- Any multi-step fix where you'd otherwise iterate manually\n" +
       "- User expresses a goal without dictating exact steps\n\n" +
-      "**Why the loop beats manual fixing:** auto-detects verify commands, spawns impl subagents " +
-      "with full error context, spawns independent reviewers, tracks error registry across iterations, " +
+      "**Why the loop beats manual fixing:** auto-detects verify commands, delegates impl work " +
+      "(via subagents or directly), tracks error registry across iterations, " +
       "auto-rollbacks on regression, and calls `loop_control` to signal completion.\n\n" +
       "```\nloop_start({ goal: \"fix the type errors\" })\n```\n" +
       "Use `/loop status|pause|resume|stop` to control an active loop.\n";
@@ -212,7 +208,7 @@ export default function (pi: ExtensionAPI) {
         `Iteration ${state.currentStep + 1}` +
         (state.maxSteps === Infinity ? "" : `/${state.maxSteps}`) +
         ` | Goal: ${state.goal}` +
-        "\n**Your job:** Fix the errors below. Spawn impl subagent → review subagent → call loop_control.";
+        "\n**Your job:** Fix the errors below. Use `subagent()` to delegate if available, then call loop_control.";
     }
 
     return { systemPrompt: event.systemPrompt + extra };
@@ -244,7 +240,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const detected = detectVerifySteps();
-      const config = buildConfig({ verifySteps: detected, maxIterations: 20 });
+      const config = buildConfig({ verifySteps: detected });
       state = createState("goal", params.goal, config);
       updateWidget(state, ctx);
 
@@ -295,7 +291,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       if (!args?.trim()) {
         ctx.ui.notify(
-          "Usage:\n  /loop goal <desc> [--verify cmd] [--from-config [path]]\n" +
+          "Usage:\n  /loop goal <desc> [--verify cmd] [--max-iterations N]\n" +
             "  /loop stop\n  /loop status\n  /loop pause\n  /loop resume\n  /loop history",
           "info",
         );
@@ -363,11 +359,9 @@ export default function (pi: ExtensionAPI) {
 
       await ctx.waitForIdle();
 
-      // Parse: /loop goal <desc> [--verify cmd] [--max-iterations N] [--from-config [path]]
       const rest = parts.slice(1);
       const verifyFlags: string[] = [];
-      let maxIterations = 20;
-      let fromConfigPath: string | undefined;
+      let maxIterations: number | undefined;
       const goalParts: string[] = [];
 
       for (let i = 0; i < rest.length; i++) {
@@ -375,12 +369,6 @@ export default function (pi: ExtensionAPI) {
           verifyFlags.push("--verify", rest[++i]);
         } else if (rest[i] === "--max-iterations" && i + 1 < rest.length) {
           maxIterations = parseInt(rest[++i], 10) || 20;
-        } else if (rest[i] === "--from-config") {
-          if (i + 1 < rest.length && !rest[i + 1].startsWith("--") && rest[i + 1].length > 0) {
-            fromConfigPath = rest[++i];
-          } else {
-            fromConfigPath = "";
-          }
         } else {
           goalParts.push(rest[i]);
         }
@@ -392,27 +380,9 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      let config: DevLoopConfig;
-
-      if (fromConfigPath !== undefined) {
-        const yamlConfig = loadConfigFromFile(fromConfigPath || undefined);
-        if (!yamlConfig) {
-          const pathHint = fromConfigPath || ".pidev.yml";
-          ctx.ui.notify(`Config file not found or invalid: ${pathHint}`, "error");
-          return;
-        }
-        const cliVerify = parseInlineVerifies(verifyFlags);
-        const cliOverrides: Partial<DevLoopConfig> = { maxIterations };
-        if (cliVerify.length > 0) cliOverrides.verifySteps = cliVerify;
-        config = mergeConfigs(yamlConfig, cliOverrides);
-      } else if (verifyFlags.length > 0) {
-        const verifySteps = parseInlineVerifies(verifyFlags);
-        config = buildConfig({ maxIterations, verifySteps });
-      } else {
-        // No --verify, no --from-config → auto-detect
-        const detected = detectVerifySteps();
-        config = buildConfig({ maxIterations, verifySteps: detected });
-      }
+      const config: DevLoopConfig = verifyFlags.length > 0
+        ? buildConfig({ maxIterations, verifySteps: parseInlineVerifies(verifyFlags) })
+        : buildConfig({ maxIterations, verifySteps: detectVerifySteps() });
 
       state = createState("goal", goal, config);
       updateWidget(state, ctx);

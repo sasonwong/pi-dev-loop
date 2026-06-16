@@ -39,10 +39,9 @@ export function buildIterationPrompt(state: DevLoopState): string {
   if (openFindings.length > 0) lines.push("");
 
   // Direct action instruction
-  lines.push("**Your job:** Fix one error at a time.");
-  lines.push("1. Spawn an **impl subagent** with full error context + verify commands");
-  lines.push("2. After it returns, spawn a **review subagent** with ONLY the changed file list");
-  lines.push("3. Call `loop_control({ status: \"next\" | \"done\", ... })` with results");
+  lines.push("**Your job:** Fix errors using TDD. Use `subagent()` to delegate if available.");
+  lines.push("After fixes are verified, call `loop_control({ status: \"next\" | \"done\", ... })`");
+  lines.push("with the structured results (implSubagents, reviewFindings).");
 
   return lines.join("\n");
 }

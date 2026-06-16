@@ -22,11 +22,7 @@
     "skills": ["./skills"],
     "prompts": ["./prompts"]
   },
-  "dependencies": {
-    "js-yaml": "^4.2.0"
-  },
   "devDependencies": {
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "bun-types": "^1.0.0",
     "typescript": "^6.0.3"

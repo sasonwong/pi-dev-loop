@@ -68,8 +68,8 @@ describe("buildIterationPrompt", () => {
   it("includes the action instruction section", () => {
     const prompt = buildIterationPrompt(makeState());
     expect(prompt).toContain("Your job");
-    expect(prompt).toContain("impl subagent");
-    expect(prompt).toContain("review subagent");
+    expect(prompt).toContain("subagent()");
     expect(prompt).toContain("loop_control");
+    expect(prompt).toContain("implSubagents");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { parseInlineVerifies, buildConfig, mergeConfigs } from "../src/verify-config";
+import { parseInlineVerifies, buildConfig } from "../src/verify-config";
 
 describe("parseInlineVerifies", () => {
   it("parses --verify args into VerifyStep array", () => {
@@ -58,29 +58,4 @@ describe("buildConfig", () => {
   });
 });
 
-describe("mergeConfigs", () => {
-  const base = buildConfig({
-    verifySteps: [{ command: "bun run typecheck", runsOn: "impl" }],
-    maxIterations: 20,
-  });
 
-  it("CLI overrides override YAML config", () => {
-    const merged = mergeConfigs(base, { maxIterations: 5 });
-    expect(merged.maxIterations).toBe(5);
-    expect(merged.verifySteps).toHaveLength(1); // from base
-  });
-
-  it("CLI verify steps replace YAML verify steps entirely", () => {
-    const merged = mergeConfigs(base, {
-      verifySteps: [{ command: "bun test", runsOn: "impl" }],
-    });
-    expect(merged.verifySteps).toHaveLength(1);
-    expect(merged.verifySteps[0].command).toBe("bun test");
-  });
-
-  it("empty CLI overrides preserve base values", () => {
-    const merged = mergeConfigs(base, {});
-    expect(merged.maxIterations).toBe(20);
-    expect(merged.verifySteps[0].command).toBe("bun run typecheck");
-  });
-});
