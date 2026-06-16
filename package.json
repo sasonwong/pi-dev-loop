@@ -1,6 +1,6 @@
 {
   "name": "pi-dev-loop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Autonomous development loop engine for pi — verify-driven iteration with subagent isolation and error tracking",
   "keywords": ["pi-package", "dev-loop", "agent-loop"],
   "license": "MIT",
