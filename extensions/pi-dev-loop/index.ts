@@ -191,10 +191,20 @@ export default function (pi: ExtensionAPI) {
   // ── System prompt injection (skill + loop context) ──
   pi.on("before_agent_start", async (event) => {
     let extra =
-      "\n\n## Dev Loop Available\n" +
-      "This project has pi-dev-loop installed. Use `loop_start` tool to start an " +
-      "autonomous fix loop when the user wants to fix bugs, type errors, or make improvements. " +
-      "Use /loop status|pause|resume|stop to control an active loop.";
+      "\n\n## Dev Loop\n" +
+      "This project has **pi-dev-loop** — an autonomous fix loop that handles error tracking, " +
+      "regression detection, subagent orchestration, and git snapshots.\n\n" +
+      "**When to use `loop_start` instead of fixing directly:**\n" +
+      "- User says \"fix this error\", \"make type errors pass\", \"fix the tests\"\n" +
+      "- Multiple errors to resolve iteratively (type errors, lint, test failures)\n" +
+      "- A bug that might need trial and error (the loop auto-tracks what works)\n" +
+      "- Any multi-step fix where you'd otherwise iterate manually\n" +
+      "- User expresses a goal without dictating exact steps\n\n" +
+      "**Why the loop beats manual fixing:** auto-detects verify commands, spawns impl subagents " +
+      "with full error context, spawns independent reviewers, tracks error registry across iterations, " +
+      "auto-rollbacks on regression, and calls `loop_control` to signal completion.\n\n" +
+      "```\nloop_start({ goal: \"fix the type errors\" })\n```\n" +
+      "Use `/loop status|pause|resume|stop` to control an active loop.\n";
 
     if (state.active) {
       extra +=

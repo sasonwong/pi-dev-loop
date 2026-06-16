@@ -5,16 +5,18 @@ argument-hint: "<goal> [--verify cmd]"
 
 You are about to start a **pi-dev-loop** autonomous development cycle.
 
-Goal: $ARGUMENTS
+**Goal:** $ARGUMENTS
 
-Your job is to analyze this goal, then begin the dev loop:
-1. Determine what needs to be built or fixed
-2. Spawn impl subagents with full context to implement
-3. Spawn review subagents to independently review changes
-4. Use `loop_control("next")` to continue iterating until there are no errors
-5. Use `loop_control("done")` when the goal is fully met
+## How the loop works
 
-Available verification commands (from configuration):
+1. **Analyze** — scan the codebase, figure out what needs to change
+2. **Start** — call `loop_start({ goal: "$ARGUMENTS" })` (or use `/loop` directly)
+3. **Iterate** — each round spawns an impl subagent with full error context, then a review subagent
+4. **Signal** — `loop_control({ status: "next", ... })` to continue, `loop_control({ status: "done", ... })` when done
+
+The loop auto-tracks errors across iterations, detects regressions, and can auto-rollback on failure.
+
+**Verified by:**
 $VERIFY_STEPS
 
-Start by analyzing the current state of the project, then begin.
+Get started — analyze the project state and begin the first iteration.
