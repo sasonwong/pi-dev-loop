@@ -125,15 +125,19 @@ export function detectProgress(
   return "zero-progress";
 }
 
+export const DEFAULT_MAX_ITERATIONS = 20;
+export const DEFAULT_MAX_CONSECUTIVE_ZERO_PROGRESS = 3;
+export const DEFAULT_GUARDRAILS: GuardrailsConfig = {
+  gitAutoSnapshot: true,
+  rollbackOnRegression: true,
+  maxFileChangesPerSubagent: 20,
+};
+
 export function defaultConfig(): DevLoopConfig {
   return {
-    maxIterations: 20,
-    maxConsecutiveZeroProgress: 3,
+    maxIterations: DEFAULT_MAX_ITERATIONS,
+    maxConsecutiveZeroProgress: DEFAULT_MAX_CONSECUTIVE_ZERO_PROGRESS,
     verifySteps: [],
-    guardrails: {
-      gitAutoSnapshot: true,
-      rollbackOnRegression: true,
-      maxFileChangesPerSubagent: 20,
-    },
+    guardrails: { ...DEFAULT_GUARDRAILS },
   };
 }

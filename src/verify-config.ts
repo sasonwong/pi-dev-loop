@@ -1,4 +1,10 @@
-import type { DevLoopConfig, VerifyStep } from "./state";
+import {
+  DEFAULT_MAX_ITERATIONS,
+  DEFAULT_MAX_CONSECUTIVE_ZERO_PROGRESS,
+  DEFAULT_GUARDRAILS,
+  type DevLoopConfig,
+  type VerifyStep,
+} from "./state";
 
 export function parseInlineVerifies(args: string[]): VerifyStep[] {
   const steps: VerifyStep[] = [];
@@ -19,14 +25,10 @@ export function buildConfig(
   overrides: Partial<DevLoopConfig>,
 ): DevLoopConfig {
   return {
-    maxIterations: overrides.maxIterations ?? 20,
-    maxConsecutiveZeroProgress: overrides.maxConsecutiveZeroProgress ?? 3,
+    maxIterations: overrides.maxIterations ?? DEFAULT_MAX_ITERATIONS,
+    maxConsecutiveZeroProgress: overrides.maxConsecutiveZeroProgress ?? DEFAULT_MAX_CONSECUTIVE_ZERO_PROGRESS,
     verifySteps: overrides.verifySteps ?? [],
-    guardrails: overrides.guardrails ?? {
-      gitAutoSnapshot: true,
-      rollbackOnRegression: true,
-      maxFileChangesPerSubagent: 20,
-    },
+    guardrails: overrides.guardrails ?? { ...DEFAULT_GUARDRAILS },
   };
 }
 

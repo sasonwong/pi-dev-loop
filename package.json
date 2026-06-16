@@ -4,6 +4,15 @@
   "description": "Autonomous development loop engine for pi — verify-driven iteration with subagent isolation and error tracking",
   "keywords": ["pi-package", "dev-loop", "agent-loop"],
   "license": "MIT",
+  "files": [
+    "src",
+    "extensions",
+    "skills",
+    "prompts",
+    "AGENTS.md",
+    "LICENSE",
+    "README.md"
+  ],
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
