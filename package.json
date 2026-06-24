@@ -1,8 +1,12 @@
 {
   "name": "pi-dev-loop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Autonomous development loop engine for pi — verify-driven iteration with subagent isolation and error tracking",
-  "keywords": ["pi-package", "dev-loop", "agent-loop"],
+  "keywords": [
+    "pi-package",
+    "dev-loop",
+    "agent-loop"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,9 +26,15 @@
     "test": "bun test"
   },
   "pi": {
-    "extensions": ["./extensions/pi-dev-loop/index.ts"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "extensions": [
+      "./extensions/pi-dev-loop/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
