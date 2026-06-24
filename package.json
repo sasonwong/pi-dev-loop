@@ -4,6 +4,10 @@
   "description": "Autonomous development loop engine for pi — verify-driven iteration with subagent isolation and error tracking",
   "keywords": ["pi-package", "dev-loop", "agent-loop"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sasonwong/pi-dev-loop.git"
+  },
   "files": [
     "src",
     "extensions",
